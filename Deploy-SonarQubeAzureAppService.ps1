@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$ApplicationInsightsApiKey = $Env:Deployment_Telemetry_Instrumentation_Key,
     [string]$Edition = $Env:SonarQubeEdition,
     [string]$Version = $Env:SonarQubeVersion
@@ -53,6 +53,69 @@ function TrackTimedEvent {
 
         Invoke-RestMethod -Method POST -Uri "https://dc.services.visualstudio.com/v2/track" -ContentType "application/json" -Body $body | out-null
     }
+}
+
+function Update-SonarConfig { 
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]
+        $ConfigFilePath, 
+        [Parameter(Mandatory = $true)]
+        [string]
+        $SqlServerName,
+        [Parameter(Mandatory = $true)]
+        [string]
+        $SqlDatabase,
+        [Parameter(Mandatory = $true)]
+        [string]
+        $SqlDatabaseAdmin,
+        [Parameter(Mandatory = $true)]
+        [string]
+        $SqlDatabaseAdminPassword
+    )
+    <#
+    .SYNOPSIS
+    Is updating the sonarqube porperties file with the given parameters
+    
+    .DESCRIPTION
+    Is updating the sonarqube porperties file with the given parameters
+    
+    .PARAMETER ConfigFilePath
+    Path to the template of sonar.properties file.
+     
+    .PARAMETER SqlServerName
+    Base name of the SQL server (not the URL!).
+    .PARAMETER SqlDatabase
+    Name of the SQL database.
+    .PARAMETER SqlDatabaseAdmin
+    SQL login name of the admin.
+    .PARAMETER SqlDatabaseAdminPassword
+    SQL login password of the admin.
+    #>
+    
+    Write-Output 'Searching for sonar.properties files to overwrite'
+    $propFiles = Get-ChildItem  -File "$ConfigFilePath/sonar.properties" -Recurse
+    
+    if (!$propFiles) {
+        Write-Output "Could not find sonar.properties"
+        exit
+    }
+
+    Write-Output "Files found at: `n $($propFiles.FullName)"
+    Write-Output "Moving to sonar.properties file"
+
+    $sonarPropertySource = $propFiles[1].FullName
+    $sonarPropertyTarget = $propFiles[0].FullName
+
+    $connectionString = "jdbc:sqlserver://$SqlServerName.database.windows.net:1433;database=$SqlDatabase;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;"
+    ((Get-Content -path $sonarPropertySource -Raw) `
+            -replace '#SqlAdmin#', $SqlDatabaseAdmin `
+            -replace '#SqlAdminPassword#', $SqlDatabaseAdminPassword`
+            -replace '#SqlConnectionString#', $connectionString
+    ) | Set-Content -Path $sonarPropertySource
+ 
+    Move-Item -Path $sonarPropertySource -Destination $sonarPropertyTarget -Force
 }
 
 TrackTimedEvent -InstrumentationKey $ApplicationInsightsApiKey -EventName 'Download And Extract Binaries' -ScriptBlock {
@@ -111,4 +174,10 @@ TrackTimedEvent -InstrumentationKey $ApplicationInsightsApiKey -EventName 'Downl
         Expand-Archive -Path $outputFile -DestinationPath '..\wwwroot' -Force
         Write-Output 'Extraction complete'
     }
+
+    Update-SonarConfig -ConfigFilePath '..\wwwroot' `
+    -SqlServerName $env:SqlServerName `
+    -SqlDatabase $env:SqlDatabase `
+    -SqlDatabaseAdmin $env:SqlDatabaseAdmin `
+    -SqlDatabaseAdminPassword $env:SqlDatabaseAdminPassword
 }
