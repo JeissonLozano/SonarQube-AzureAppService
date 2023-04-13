@@ -48,7 +48,7 @@
             ]
         },
         "repoUrl": {
-            "defaultValue": "https://github.com/vanderby/SonarQube-AzureAppService",
+            "defaultValue": "https://github.com/JeissonLozano/SonarQube-AzureAppService",
             "type": "string"
         },
         "branch": {
